@@ -153,6 +153,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _curtain: {fileID: 224140041}
+  _rectMask: {fileID: 0}
+  _timerControllerMovingTime: 0.35
+  _moveInterval: 0.05
 --- !u!4 &48423278
 Transform:
   m_ObjectHideFlags: 0

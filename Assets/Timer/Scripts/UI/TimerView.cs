@@ -3,7 +3,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Timer.Scripts
+namespace Timer.Scripts.UI
 {
     public class TimerView : MonoBehaviour
     {
@@ -21,6 +21,13 @@ namespace Timer.Scripts
             _plusButton.ChangeButtonState += OnChangePlusButtonState;
             _minusButton.ChangeButtonState += OnChangeMinusButtonState;
             _startButton.onClick.AddListener(PressStart);
+        }
+
+        private void OnDestroy()
+        {
+            _plusButton.ChangeButtonState -= OnChangePlusButtonState;
+            _minusButton.ChangeButtonState -= OnChangeMinusButtonState;
+            _startButton.onClick.RemoveListener(PressStart);
         }
 
         public void Construct(TimerController timerController) =>

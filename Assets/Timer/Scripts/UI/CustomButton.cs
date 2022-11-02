@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-namespace Timer.Scripts
+namespace Timer.Scripts.UI
 {
     [RequireComponent(typeof(Image))]
     public class CustomButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler

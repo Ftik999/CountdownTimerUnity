@@ -2,7 +2,7 @@
 using System.Collections;
 using UnityEngine;
 
-namespace Timer.Scripts
+namespace Timer.Scripts.UI
 {
     public class LoadingCurtain : MonoBehaviour
     {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using Random = UnityEngine.Random;
@@ -15,7 +16,7 @@ namespace Timer.Scripts
             _coroutineRunner = coroutineRunner;
         }
 
-        public Coroutine MovementObject(RectTransform[] target, Vector2 endPosition, float moveTime,
+        public Coroutine MovementObject(List<RectTransform> target, Vector2 endPosition, float moveTime,
             float moveInterval, Action onComplete)
         {
             return _coroutineRunner.StartCoroutine(MoveObjects(target, endPosition, moveTime, moveInterval,
@@ -74,10 +75,10 @@ namespace Timer.Scripts
             }
         }
 
-        private IEnumerator MoveObjects(RectTransform[] target, Vector2 endPosition, float moveTime, float moveInterval,
+        private IEnumerator MoveObjects(List<RectTransform> target, Vector2 endPosition, float moveTime, float moveInterval,
             Action onComplete)
         {
-            for (int i = 0; i < target.Length; i++)
+            for (int i = 0; i < target.Count; i++)
             {
                 Action onCompleteMove = null;
 
@@ -86,7 +87,7 @@ namespace Timer.Scripts
                     endPosition = new Vector2(endPosition.x, target[i].anchoredPosition.y);
                 }
 
-                if (i == target.Length - 1)
+                if (i == target.Count - 1)
                 {
                     onCompleteMove = onComplete;
                 }
