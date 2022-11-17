@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Timer.Scripts.Data;
 using Timer.Scripts.Services;
 using Timer.Scripts.UI;
+using UniRx;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -12,10 +13,11 @@ namespace Timer.Scripts
     {
         private const float YOffsetTimerPosition = 1.3f;
         private const float XOffsetTimerPosition = 0.55f;
-        [SerializeField] private LoadingCurtain _curtain;
-        [SerializeField] private float _timerControllerMovingTime = 0.35f;
-        [SerializeField] private float _moveInterval = 0.05f;
 
+        [Header("TimerDisplayOptions")] [SerializeField]
+        private float _timerControllerMovingTime = 0.35f;
+
+        [SerializeField] private float _moveInterval = 0.05f;
 
         private IProgressService _progressService;
         private ISaveLoadService _saveLoadService;
@@ -24,49 +26,32 @@ namespace Timer.Scripts
         private UIRoot _uiRoot;
         private TimerContainer _timersContainer;
         private RectTransform _newTimerButton;
+        private LoadingCurtain _curtain;
 
         private List<TimerController> _timerControllers = new();
-
         private List<RectTransform> _objectsToMove = new();
-        //private Vector2 _startPositionToFirstTimer;
 
         private bool _someTimerIsOpen;
 
-        private void Awake()
+        public void Construct(TweenController tweenController, IProgressService progressService,
+            ISaveLoadService saveLoadService, IUIFactory factory, LoadingCurtain curtain, UIRoot uiRoot,
+            TimerContainer timerContainer)
         {
-            StartApp();
+            _tweenController = tweenController;
+            _progressService = progressService;
+            _saveLoadService = saveLoadService;
+            _factory = factory;
+            _curtain = curtain;
+            _uiRoot = uiRoot;
+            _timersContainer = timerContainer;
         }
 
-        private void StartApp()
+        public void StartApp()
         {
-            _tweenController = new TweenController(this);
-
-            _progressService = new ProgressService();
-            _saveLoadService = new SaveLoadService(_progressService);
-            LoadOrInitialProgress();
-
-            _factory = new UIFactory(_progressService, _tweenController);
-
-            CreateUIRoot();
-            CreateTimersContainer();
-
             CreateTimers();
             SetContainerSpace();
 
             _curtain.Hide(MoveTimers);
-        }
-
-        private void CreateUIRoot()
-        {
-            _uiRoot = _factory.CreateUIRoot();
-            _uiRoot.Init();
-        }
-
-        private void CreateTimersContainer()
-        {
-            float containerHeight = 0.5f * (_uiRoot.GetHeight() / 2);
-            _timersContainer = _factory.CreateTimerContainer(
-                new Vector2(0, _uiRoot.StartPositionToFirstTimer.y), containerHeight);
         }
 
         private void SetContainerSpace() =>
@@ -102,8 +87,13 @@ namespace Timer.Scripts
             _timerControllers.Add(timer);
             _objectsToMove.Add(timer.GetComponent<RectTransform>());
 
-            timer.OpenCloseTimer += OnOpenCloseTimer;
-            timer.SaveProgress += OnSaveProgress;
+            timer.OpenCloseTimer
+                .Subscribe(OnOpenCloseTimer)
+                .AddTo(timer);
+
+            timer.SaveProgress
+                .Subscribe(_ => OnSaveProgress())
+                .AddTo(timer);
         }
 
         private void CreateNewTimerButton()
@@ -113,7 +103,9 @@ namespace Timer.Scripts
             spawnPosition.y -= lastTimerTransform.rect.height * YOffsetTimerPosition;
 
             _newTimerButton = _factory.CreateNewTimerButton(spawnPosition);
-            _newTimerButton.GetComponent<Button>().onClick.AddListener(CreateNewTimer);
+            _newTimerButton.GetComponent<Button>().OnClickAsObservable()
+                .Subscribe(_ => CreateNewTimer())
+                .AddTo(this);
             _objectsToMove.Add(_newTimerButton);
         }
 
@@ -140,9 +132,6 @@ namespace Timer.Scripts
             _objectsToMove.Add(_newTimerButton);
             SetParent(_newTimerButton, _timersContainer.TimerContainerTransform);
         }
-
-        private void LoadOrInitialProgress() =>
-            _progressService.TimerSave = _saveLoadService.Load() ?? new TimerSave();
 
         private void OnSaveProgress() =>
             _saveLoadService.Save();

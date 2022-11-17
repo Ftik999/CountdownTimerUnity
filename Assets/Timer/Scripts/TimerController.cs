@@ -3,6 +3,7 @@ using Timer.Scripts.Data;
 using Timer.Scripts.Services;
 using Timer.Scripts.UI;
 using TMPro;
+using UniRx;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -11,22 +12,14 @@ namespace Timer.Scripts
     [RequireComponent(typeof(Image))]
     public class TimerController : MonoBehaviour
     {
-        public event Action SaveProgress;
-        public event Action<string> ChangeDisplayValue;
-        public event Action<bool> OpenCloseTimer;
-
-
-        private const float PressedValueCoefficient = 0.4f;
-        private const float TimeDelay = 0.7f;
-        private const int ValueForChange = 5;
-        private const int SecondsOnDay = 86400;
+        public ReactiveCommand SaveProgress = new ReactiveCommand();
+        public ReactiveCommand<bool> OpenCloseTimer = new ReactiveCommand<bool>();
 
         [SerializeField] private TextMeshProUGUI _buttonText;
         [SerializeField] private Button _openTimer;
 
-        [Header("Animation Options")] [SerializeField]
-        private float _changeColorAnimationTime = 3f;
-
+        [Header("Animation Options")] 
+        [SerializeField] private float _changeColorAnimationTime = 3f;
         [SerializeField] private float _shakeIntensity = 1;
         [SerializeField] private float _timerMovingTime = 0.35f;
         [SerializeField] private Color _completeTimerColor = Color.yellow;
@@ -34,21 +27,8 @@ namespace Timer.Scripts
         private IUIFactory _factory;
         private TweenController _tweenController;
         private RectTransform _uiRoot;
-        private TimerData _timerData;
         private TimerView _timerView;
-
-        private bool _isStarted;
-        private bool _isComplete;
-        private double _currentTimer;
-        private long _startTimeToUnix;
-        private int _id;
-
-
-        //Pressed Button options
-        private bool _addButtonIsActive;
-        private bool _removeButtonIsActive;
-        private float _buttonPressedTime;
-
+        private Timer _timer;
 
         //end Timer animation
         private Image _image;
@@ -56,20 +36,7 @@ namespace Timer.Scripts
         private Coroutine _shakeCoroutine;
         private Color _defaultColor;
 
-        public bool TimerIsOpen { get; set; }
-
-        private void OnDestroy() =>
-            _openTimer.onClick.RemoveListener(OpenTimer);
-
-        private void Update()
-        {
-            if (_addButtonIsActive || _removeButtonIsActive)
-            {
-                ChangeTimerValueWhenButtonIsPressed();
-            }
-
-            TimerLogic();
-        }
+        public bool TimerIsOpen { get; set; } = true;
 
         public void Construct(UIFactory factory, TweenController tweenController, RectTransform uiRoot)
         {
@@ -79,89 +46,48 @@ namespace Timer.Scripts
 
             _image = GetComponent<Image>();
             _defaultColor = _image.color;
-            _openTimer.onClick.AddListener(OpenTimer);
+            _openTimer.OnClickAsObservable()
+                .Subscribe(_ => OpenTimer())
+                .AddTo(this);
         }
 
-        public void Init(TimerData timerData)
+        private void TimerValueChanged(double timerTime)
         {
-            _timerData = timerData;
-            _id = timerData.Id;
-            _currentTimer = timerData.TimerTime;
-            _startTimeToUnix = timerData.StartTimeToUnix;
-            _isComplete = timerData.IsComplete;
-            _buttonText.text = "Timer " + (_id + 1);
-
-            InitTimer();
-        }
-
-        private void InitTimer()
-        {
-            if (_currentTimer > 0)
+            if (_timerView != null)
             {
-                var currentUnixTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                if (_startTimeToUnix + _currentTimer < currentUnixTime)
-                {
-                    _currentTimer = 0;
-                    _image.color = _completeTimerColor;
-                    _isComplete = true;
-                }
-                else
-                {
-                    _currentTimer = _startTimeToUnix + _currentTimer - currentUnixTime;
-                    _isStarted = true;
-                }
-            }
-            else
-            {
-                if (_isComplete)
-                {
-                    _image.color = _completeTimerColor;
-                }
+                _timerView.DisplayTimer(ConvertSecondsToStandardTime(timerTime));
             }
         }
 
-        private void ChangeTimerValueWhenButtonIsPressed()
+        public void Init(TimerData timerData, Updater updater)
         {
-            if (_buttonPressedTime > TimeDelay)
-            {
-                if (_addButtonIsActive)
-                {
-                    IncreaseTime(PressedValueCoefficient * _buttonPressedTime);
-                }
+            _timer = new Timer(timerData, updater);
+            _timer.TimerTime
+                .ObserveEveryValueChanged(x => x.Value)
+                .Subscribe(TimerValueChanged)
+                .AddTo(this);
 
-                if (_removeButtonIsActive)
-                {
-                    DecreaseTime(PressedValueCoefficient * _buttonPressedTime);
-                }
+            _timer.TimerStopped
+                .Subscribe(_ => OnTimerStopped())
+                .AddTo(this);
+
+            if (_timer.IsComplete)
+            {
+                RenderTimerButtonChanges();
             }
 
-            _buttonPressedTime += Time.deltaTime;
+            TimerIsOpen = false;
+            _buttonText.text = "Timer " + (timerData.Id + 1);
         }
 
-        private void TimerLogic()
+        private void OnTimerStopped()
         {
-            if (!_isStarted)
-            {
-                return;
-            }
-
-            if (_currentTimer > 0)
-            {
-                _currentTimer -= Time.deltaTime;
-                DisplayTimer();
-            }
-            else
-            {
-                Stop();
-            }
+            Save();
+            RenderTimerButtonChanges();
         }
 
-        private void Stop()
+        private void RenderTimerButtonChanges()
         {
-            _isStarted = false;
-            _isComplete = true;
-            _currentTimer = 0;
-
             if (!TimerIsOpen)
             {
                 StopTimerEndCoroutine();
@@ -173,8 +99,6 @@ namespace Timer.Scripts
             {
                 _image.color = _completeTimerColor;
             }
-
-            WriteStopTimerSaves();
         }
 
         private void OpenTimer()
@@ -184,13 +108,14 @@ namespace Timer.Scripts
 
             StopTimerEndCoroutine();
 
-            OpenCloseTimer?.Invoke(true);
+            OpenCloseTimer?.Execute(true);
 
             CreateTimerView();
             MoveTimerView(Vector2.zero);
-            DisplayTimer();
-
-            WriteCompleteSaves();
+            _timer.TimerReviewed();
+            TimerValueChanged(_timer.TimerTime.Value);
+            
+            Save();
         }
 
         private void ResetRotation() =>
@@ -212,100 +137,48 @@ namespace Timer.Scripts
         {
             _timerView = _factory.CreateTimerView(this, new Vector2(0, _uiRoot.rect.height / 2));
 
-            _timerView.AddTimerValue += AddTimerValue;
-            _timerView.RemoveTimerValue += RemoveTimeValue;
-            _timerView.StartTimer += StartTimer;
+            _timerView.PlusButton.ButtonState
+                .ObserveEveryValueChanged(isPressed => isPressed.Value)
+                .Subscribe(AddTimerValue)
+                .AddTo(_timerView);
+
+            _timerView.MinusButton.ButtonState
+                .ObserveEveryValueChanged(isPressed => isPressed.Value)
+                .Subscribe(RemoveTimeValue)
+                .AddTo(_timerView);
+
+            _timerView.StartButton.OnClickAsObservable()
+                .Subscribe(_ => StartTimer())
+                .AddTo(_timerView);
         }
-
-        private void StartTimer()
-        {
-            if (_currentTimer > 0)
-            {
-                _isStarted = true;
-                _startTimeToUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                WriteStartTimerSaves();
-            }
-            else
-            {
-                WriteCompleteSaves();
-            }
-
-            _image.color = _defaultColor;
-            _isComplete = false;
-
-            CloseTimerView();
-            ShowAllTimers();
-        }
-
-        private void ShowAllTimers() =>
-            OpenCloseTimer?.Invoke(false);
-
-        private void CloseTimerView() =>
-            MoveTimerView(new Vector2(0, -_uiRoot.rect.height), DestroyTimerView);
 
         private void DestroyTimerView()
         {
-            _timerView.AddTimerValue -= AddTimerValue;
-            _timerView.RemoveTimerValue -= RemoveTimeValue;
-            _timerView.StartTimer -= StartTimer;
-
             Destroy(_timerView.gameObject);
             _timerView = null;
         }
 
-        private void AddTimerValue(bool isPressed)
+        private void StartTimer()
         {
-            _addButtonIsActive = isPressed;
+            _timer.StartTimer();
+            _image.color = _defaultColor;
 
-            if (_addButtonIsActive)
-            {
-                _buttonPressedTime = 0f;
-                IncreaseTime(ValueForChange);
-            }
+            CloseTimerView();
+            ShowAllTimers();
+            Save();
         }
 
-        private void RemoveTimeValue(bool isPressed)
-        {
-            _removeButtonIsActive = isPressed;
+        private void ShowAllTimers() =>
+            OpenCloseTimer?.Execute(false);
+        
+        private void CloseTimerView() =>
+            MoveTimerView(new Vector2(0, -_uiRoot.rect.height), DestroyTimerView);
 
-            if (_removeButtonIsActive)
-            {
-                _buttonPressedTime = 0f;
-                DecreaseTime(ValueForChange);
-            }
-        }
+        private void AddTimerValue(bool isPressed) => 
+            _timer.AddTimerValue(isPressed);
 
-        private void IncreaseTime(float value)
-        {
-            double newTime = _currentTimer + value;
-
-            if (newTime > SecondsOnDay)
-            {
-                ChangeTimerValue(_isStarted ? SecondsOnDay : newTime - SecondsOnDay);
-            }
-            else
-            {
-                ChangeTimerValue(newTime);
-            }
-
-            DisplayTimer();
-        }
-
-        private void DecreaseTime(float value)
-        {
-            double newTime = _currentTimer - value;
-
-            if (newTime < 0)
-            {
-                ChangeTimerValue(SecondsOnDay - newTime * -1);
-            }
-            else
-            {
-                ChangeTimerValue(newTime);
-            }
-
-            DisplayTimer();
-        }
+        private void RemoveTimeValue(bool isPressed) => 
+            _timer.RemoveTimeValue(isPressed);
 
         private string ConvertSecondsToStandardTime(double seconds)
         {
@@ -321,41 +194,7 @@ namespace Timer.Scripts
             _tweenController.MovementObject(_timerView.GetComponent<RectTransform>(),
                 endPosition, _timerMovingTime, onComplete);
 
-        private void ChangeTimerValue(double newTime) =>
-            _currentTimer = newTime;
-
-        private void DisplayTimer() =>
-            ChangeDisplayValue?.Invoke(ConvertSecondsToStandardTime(_currentTimer));
-
         private void Save() =>
-            SaveProgress?.Invoke();
-
-        private void WriteStopTimerSaves()
-        {
-            _timerData.IsComplete = true;
-            _timerData.StartTimeToUnix = 0;
-            _timerData.TimerTime = 0;
-
-            Save();
-        }
-
-        private void WriteCompleteSaves()
-        {
-            if (_isComplete)
-            {
-                _timerData.IsComplete = false;
-                _timerData.TimerTime = 0;
-
-                Save();
-            }
-        }
-
-        private void WriteStartTimerSaves()
-        {
-            _timerData.IsComplete = false;
-            _timerData.TimerTime = _currentTimer;
-            _timerData.StartTimeToUnix = _startTimeToUnix;
-            Save();
-        }
+            SaveProgress?.Execute();
     }
 }

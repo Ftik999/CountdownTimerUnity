@@ -1,4 +1,4 @@
-﻿using System;
+﻿using UniRx;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -8,11 +8,11 @@ namespace Timer.Scripts.UI
     [RequireComponent(typeof(Image))]
     public class CustomButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     {
-        public event Action<bool> ChangeButtonState;
-
         private Image _image;
         private Color _defaultColor;
         private Color _selectedColor = new(0.85f, 0.85f, 0.85f, 1);
+
+        public ReactiveProperty<bool> ButtonState = new();
 
         private void Start()
         {
@@ -22,13 +22,13 @@ namespace Timer.Scripts.UI
 
         public void OnPointerDown(PointerEventData eventData)
         {
-            ChangeButtonState?.Invoke(true);
+            ButtonState.Value = true;
             _image.color = _selectedColor;
         }
 
         public void OnPointerUp(PointerEventData eventData)
         {
-            ChangeButtonState?.Invoke(false);
+            ButtonState.Value = false;
             _image.color = _defaultColor;
         }
     }

@@ -6,6 +6,7 @@ namespace Timer.Scripts.Services
 {
     public class UIFactory : IUIFactory
     {
+        private const string CountdownTimerPath = "CountdownTimer";
         private const string UIRootPath = "UI/Root";
         private const string UITimeControllerPath = "UI/TimerController";
         private const string UITimerView = "UI/TimerView";
@@ -13,37 +14,53 @@ namespace Timer.Scripts.Services
         private const string UITimersContainer = "UI/TimersContainer";
 
         private readonly IProgressService _progressService;
+        private readonly ISaveLoadService _saveLoadService;
         private readonly TweenController _tweenController;
+        private readonly Updater _updater;
+        private readonly LoadingCurtain _curtain;
 
-        private RectTransform _uiRoot;
+        private UIRoot _uiRoot;
+        private TimerContainer _timerContainer;
 
-        public UIFactory(IProgressService progressService, TweenController tweenController)
+        public UIFactory(IProgressService progressService, ISaveLoadService saveLoadService,
+            TweenController tweenController, Updater updater, LoadingCurtain curtain)
         {
             _progressService = progressService;
+            _saveLoadService = saveLoadService;
             _tweenController = tweenController;
+            _updater = updater;
+            _curtain = curtain;
         }
 
-        public UIRoot CreateUIRoot()
+        public void CreateUIRoot()
         {
-            UIRoot rootPrefab = Resources.Load<UIRoot>(UIRootPath);
-            var uiRoot = Object.Instantiate(rootPrefab);
-            _uiRoot = uiRoot.UIRootTransform;
-
-            return uiRoot;
+            _uiRoot = Instantiate(UIRootPath).GetComponent<UIRoot>();
+            _uiRoot.Init();
         }
 
-        public TimerContainer CreateTimerContainer(Vector2 spawnPosition, float containerSize)
+        public void CreateTimerContainer()
         {
-            TimerContainer timerContainerPrefab = Resources.Load<TimerContainer>(UITimersContainer);
-            TimerContainer timerContainer = Object.Instantiate(timerContainerPrefab, _uiRoot);
-            timerContainer.Construct(spawnPosition, containerSize);
-            return timerContainer;
+            float containerHeight = 0.5f * (_uiRoot.GetHeight() / 2);
+            Vector2 spawnPosition = new Vector2(0, _uiRoot.StartPositionToFirstTimer.y);
+
+            _timerContainer = Instantiate(UITimersContainer, _uiRoot.UIRootTransform)
+                .GetComponent<TimerContainer>();
+            _timerContainer.Construct(spawnPosition, containerHeight);
+        }
+
+        public void CreateCountDownTimer()
+        {
+            CountdownTimer countdownTimer = Instantiate(CountdownTimerPath).GetComponent<CountdownTimer>();
+            countdownTimer.Construct(_tweenController, _progressService, _saveLoadService, this, _curtain,
+                _uiRoot, _timerContainer);
+
+            countdownTimer.StartApp();
         }
 
         public TimerController CreateTimer(int ordinalNumber, Vector2 spawnPosition)
         {
-            TimerController timerPrefab = Resources.Load<TimerController>(UITimeControllerPath);
-            TimerController timer = Object.Instantiate(timerPrefab, _uiRoot);
+            TimerController timer = Instantiate(UITimeControllerPath, _uiRoot.UIRootTransform)
+                .GetComponent<TimerController>();
 
             if (ordinalNumber == 0)
             {
@@ -52,33 +69,40 @@ namespace Timer.Scripts.Services
 
             timer.GetComponent<RectTransform>().anchoredPosition = spawnPosition;
 
-            timer.Construct(this, _tweenController, _uiRoot);
-            timer.Init(_progressService.TimerSave.GetTimerData(ordinalNumber));
+            timer.Construct(this, _tweenController, _uiRoot.UIRootTransform);
+            timer.Init(_progressService.TimerSave.GetTimerData(ordinalNumber), _updater);
 
             return timer;
         }
 
         public TimerView CreateTimerView(TimerController timerController, Vector2 spawnPosition)
         {
-            TimerView timerViewPrefab = Resources.Load<TimerView>(UITimerView);
-            TimerView timerView = Object.Instantiate(timerViewPrefab, _uiRoot);
+            TimerView timerView = Instantiate(UITimerView, _uiRoot.UIRootTransform).GetComponent<TimerView>();
 
             RectTransform timerViewTransform = timerView.GetComponent<RectTransform>();
             spawnPosition.y += 0.55f * timerViewTransform.rect.height;
             timerViewTransform.anchoredPosition = spawnPosition;
-
-            timerView.Construct(timerController);
 
             return timerView;
         }
 
         public RectTransform CreateNewTimerButton(Vector2 spawnPosition)
         {
-            RectTransform newTimerButtonPrefab = Resources.Load<RectTransform>(UINewTimerButtonPath);
-            RectTransform newTimerButton = Object.Instantiate(newTimerButtonPrefab, _uiRoot);
+            RectTransform newTimerButton = Instantiate(UINewTimerButtonPath, _uiRoot.UIRootTransform)
+                .GetComponent<RectTransform>();
+
             newTimerButton.anchoredPosition = spawnPosition;
 
             return newTimerButton;
         }
+
+        private static GameObject Instantiate(string objectPath) =>
+            Object.Instantiate(GetObjectPrefab(objectPath));
+
+        private static GameObject Instantiate(string objectPath, RectTransform parent) =>
+            Object.Instantiate(GetObjectPrefab(objectPath), parent);
+
+        private static GameObject GetObjectPrefab(string objectPath) =>
+            Resources.Load<GameObject>(objectPath);
     }
 }
